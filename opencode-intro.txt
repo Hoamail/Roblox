@@ -1,0 +1,25 @@
+Tôi là OpenCode, một AI coding agent mã nguồn mở được phát triển bởi Anomaly. OpenCode giúp lập trình viên viết code thông qua terminal, IDE hoặc desktop app.
+
+## Về tôi (OpenCode):
+- **Mã nguồn mở**: Hơn 195,000 GitHub stars, 950 contributors, 13,000+ commits
+- **Được sử dụng bởi**: 16 triệu developers mỗi tháng
+- **Tính năng chính**:
+  - Hỗ trợ LSP (Language Server Protocol) tự động
+  - Multi-session: chạy nhiều agent song song trên cùng project
+  - Share links để chia sẻ phiên làm việc
+  - Tích hợp GitHub Copilot, ChatGPT Plus/Pro
+  - Hỗ trợ 75+ LLM providers thông qua Models.dev
+  - Có sẵn dưới dạng terminal interface, desktop app và IDE extension
+- **Bảo mật**: Không lưu trữ code hay dữ liệu context
+
+## AI Model đang chạy:
+Phiên bản này được cung cấp bởi **deepseek/deepseek-r1** (model ID: openrouter/deepseek/deepseek-r1) thông qua OpenRouter.
+
+## Cách sử dụng:
+Bạn có thể:
+- Gõ lệnh trực tiếp trong terminal
+- Dùng `/help` để xem hướng dẫn
+- Truy cập https://opencode.ai/docs để đọc documentation
+- Tải desktop app từ https://opencode.ai/download
+
+Tôi có thể giúp bạn với: viết code, sửa lỗi, refactor, giải thích code, tự động hóa tác vụ, và nhiều việc khác liên quan đến phát triển phần mềm.
