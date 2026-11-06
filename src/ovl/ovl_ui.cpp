@@ -146,6 +146,7 @@ int* g_capVk = nullptr;         // slot being rebound
 const char* g_capCfg = nullptr; // its overlay.cfg key
 DWORD g_capT0 = 0;              // ignore the click that started capture
 bool g_capDrained = false;      // stale "pressed" bits of that click cleared
+bool g_capPollReady = false;    // previous down-state snapshot is initialized
 
 // Click to rebind: the next key/button press (see the capture poll in the main
 // loop) becomes the hotkey. Escape during capture unbinds.
@@ -170,6 +171,7 @@ void keyBindWidget(const char* label, int* vk, const char* cfgKey,
             g_capCfg = cfgKey;
             g_capT0 = GetTickCount();
             g_capDrained = false;
+            g_capPollReady = false;
             if (g_diagState) {
                 printf("bind start %s\n", cfgKey);
                 fflush(stdout);

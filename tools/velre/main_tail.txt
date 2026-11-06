@@ -1,0 +1,81 @@
+    // Roblox-only passes run first: they never touch velext, so they are safe
+    // to use even when velext has instrumentation checks armed.
+    if (watchSecs > 0.0) {
+        printf("\n== camera watch ==\n");
+        watchCamera(m, o, t, watchSecs);
+    }
+    if (matsMs > 0) {
+        printf("\n== matrix scan ==\n");
+        scanMatrices(m, o, t, matsMs);
+    }
+
+    // --- velext side (only when a velext mode was asked for) ---
+    bool needVelext = doMods || doScan || unpackPath || doHex || threadSecs > 0.0;
+    if (!needVelext) {
+        printf("\nVELSCAN DONE (roblox only)\n");
+        return 0;
+    }
+    DWORD vpid = 0;
+    std::wstring vname;
+    if (!findVelext(vpid, vname)) {
+        printf("FAIL: velext process not found\n");
+        return 1;
+    }
+    wprintf(L"== velext ==\n  pid=%lu name=%s\n", vpid, vname.c_str());
+    HANDLE vh = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, vpid);
+    if (!vh) {
+        printf("FAIL: cannot open velext (error=%lu). Needs elevation.\n",
+               (unsigned long)GetLastError());
+        return 1;
+    }
+    Memory vmem;
+    vmem.pid = vpid;
+    vmem.h = vh;
+
+    std::vector<ModInfo> mods = listModules(vh);
+    printf("  modules=%zu\n", mods.size());
+    const ModInfo* mainMod = nullptr;
+    for (auto& mm : mods) {
+        char nm[128]{}, path[512]{};
+        WideCharToMultiByte(CP_UTF8, 0, mm.name.c_str(), -1, nm, sizeof(nm), nullptr, nullptr);
+        WideCharToMultiByte(CP_UTF8, 0, mm.path.c_str(), -1, path, sizeof(path), nullptr, nullptr);
+        printf("  %-28s base=0x%llx size=0x%llx %s\n", nm,
+               (unsigned long long)mm.base, (unsigned long long)mm.size, path);
+        if (vname == mm.name) mainMod = &mm;
+    }
+    if (mainMod) {
+        printf("  main module sections:\n");
+        printSections(vmem, *mainMod);
+        if (unpackPath) {
+            printf("  runtime image:\n");
+            if (!unpackImage(vmem, *mainMod, unpackPath))
+                printf("  unpack FAILED\n");
+        }
+    }
+    if (doHex && mainMod) {
+        printf("\n== hex dump ==\n");
+        for (auto& hr : hexReqs) {
+            uint64_t at = hr.first;
+            if (at < 0x1000000ull) at += mainMod->base; // rva form
+            hexDump(vmem, at, hr.second);
+        }
+    }
+    if (threadSecs > 0.0) {
+        printf("\n== thread profile ==\n");
+        profileThreads(vpid, mods, threadSecs);
+    }
+    if (doScan) {
+        printf("\n== pointer scan (velext writable memory) ==\n");
+        scanValue(vh, "robloxBase", t.base, mods, 20);
+        scanValue(vh, "datamodel", t.dm, mods, 20);
+        scanValue(vh, "workspace", t.ws, mods, 20);
+        scanValue(vh, "camera", t.cam, mods, 40);
+        scanValue(vh, "visualEng", t.ve, mods, 20);
+        scanValue(vh, "players", t.players, mods, 20);
+        scanValue(vh, "localPlr", t.local, mods, 20);
+        scanValue(vh, "model", t.model, mods, 20);
+        scanValue(vh, "humanoid", t.humanoid, mods, 20);
+        scanValue(vh, "hrp", t.hrp, mods, 20);
+        scanValue(vh, "primitive", t.prim, mods, 20);
+    }
+

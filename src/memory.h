@@ -11,22 +11,14 @@
 #include <cstdint>
 
 extern "C" {
-// NtWriteVirtualMemory syscall id, resolved at runtime from the ntdll stub.
-__attribute__((used)) static uint32_t g_ntWriteId = 0;
+// Defined once in src\ntwrite.cpp (linked into every write-capable tool).
+// Shared so a write from any TU uses the id resolved by openWrite().
+extern uint32_t g_ntWriteId;
 
 // mov eax, [g_ntWriteId] ; mov r10, rcx ; syscall ; ret
 // (rdx/r8/r9 + the 5th arg at [rsp+0x28] are already where the kernel wants them)
-// static + naked: mỗi TU có bản riêng (header được include bởi nhiều .cpp),
-// tránh multiple definition mà không cần weak/allow-multiple-definition.
-__attribute__((naked)) static long ntWriteSyscall(void* handle, void* addr,
-                                                  const void* buf, size_t size,
-                                                  size_t* written) {
-    __asm__(
-        "movl g_ntWriteId(%rip), %eax\n"
-        "movq %rcx, %r10\n"
-        "syscall\n"
-        "ret\n");
-}
+long ntWriteSyscall(void* handle, void* addr, const void* buf, size_t size,
+                    size_t* written);
 }
 
 class Memory {
@@ -52,8 +44,16 @@ public:
     }
 
     bool open() {
+        if (h) CloseHandle(h);
         h = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
         return h != nullptr;
+    }
+
+    // Drop the current handle (e.g. to re-open with write rights after the
+    // offsets version was validated).
+    void close() {
+        if (h) CloseHandle(h);
+        h = nullptr;
     }
 
     // Full rights for memory-write features (aim). May fail where

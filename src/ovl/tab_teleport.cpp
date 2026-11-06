@@ -1,6 +1,9 @@
 #include "ovl_tabs.h"
 #include "ovl_ui.h"
 #include "ovl_state.h"
+#include "ovl_stunt.h"
+#include "ovl_spectate.h"
+#include "ovl_tp.h"
 #include "imgui.h"
 #include <cmath>
 #include <algorithm>
@@ -93,6 +96,37 @@ void drawTabTeleport(MenuCtx& c) {
                 ImGui::SameLine();
                 ImGui::TextDisabled("%d listed  -  click TP", (int)rows.size());
 
+                // One-click dash: the TP buttons no longer write Position (the
+                // solver reverted that in 10-50 ms and needed spam clicks).
+                ImGui::Text("TP");
+                ImGui::SameLine();
+                sliderIntCfg("##tpspeed", &cfgTpSpeed, 60, 1200, "%d u/s",
+                             "tp.speed");
+                hitMark();
+                ImGui::SameLine();
+                ImGui::TextDisabled("dash speed");
+                if (Tp::active()) {
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f),
+                                       "dashing %.2fM w/s",
+                                       Tp::writesPerSec() / 1e6f);
+                    hitMark();
+                    ImGui::SameLine();
+                    if (ImGui::Button("stop##dash", ImVec2(48.0f, 0.0f)))
+                        Tp::cancel();
+                    hitMark();
+                }
+                if (g_specWant) {
+                    if (Spectate::active())
+                        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f),
+                                           "spectating %s", g_specName);
+                    else
+                        ImGui::TextDisabled("spectating %s (waiting)", g_specName);
+                    ImGui::SameLine();
+                    if (ImGui::Button("stop##spec", ImVec2(48.0f, 0.0f)))
+                        g_specWant = 0;
+                    hitMark();
+                }
+
                 ImGui::BeginChild("##tplist", ImVec2(324.0f, 200.0f), true);
                 {
                     // The whole list area must take the mouse: otherwise the
@@ -107,11 +141,38 @@ void drawTabTeleport(MenuCtx& c) {
                 for (auto& r : rows) {
                     Ent& e = ents[r.idx];
                     ImGui::PushID((const void*)(uintptr_t)e.prim);
-                    bool canTp = !e.self && haveWrite;
+                    bool isSpec = g_specWant &&
+                                  (g_specIsPlayer
+                                       ? (e.player && e.player == g_specKey)
+                                       : (e.isNPC && e.model == g_specKey));
+                    // Spectate: pin Camera.CameraSubject to the target Humanoid.
+                    // The game's own camera module then follows that character;
+                    // mouse orbit and scroll zoom keep working normally.
+                    bool canSpec = !e.self && haveWrite && !Stunt::active() &&
+                                   o.cameraSubject && e.humanoid;
+                    if (!canSpec) ImGui::BeginDisabled();
+                    if (ImGui::Button(isSpec ? "off" : "spec",
+                                      ImVec2(40.0f, 0.0f)) &&
+                        canSpec) {
+                        if (isSpec) {
+                            g_specWant = 0;
+                        } else {
+                            g_specWant = 1;
+                            g_specIsPlayer = e.isNPC ? 0 : 1;
+                            g_specKey = e.isNPC ? e.model : e.player;
+                            snprintf(g_specName, sizeof g_specName, "%s",
+                                     e.tag.c_str());
+                            toast("spectate %s", e.tag.c_str());
+                        }
+                    }
+                    if (!canSpec) ImGui::EndDisabled();
+                    hitMark();
+                    ImGui::SameLine();
+                    bool canTp = !e.self && haveWrite && !Stunt::active();
                     if (!canTp) ImGui::BeginDisabled();
                     if (ImGui::Button(e.self ? "you" : "TP", ImVec2(36.0f, 0.0f)) &&
                         canTp) {
-                        g_tpTargetPrim = e.prim; // the loop does the write
+                        g_tpTargetPrim = e.prim; // the loop starts the dash
                         g_tpRequestTick = nowLoop;
                     }
                     if (!canTp) ImGui::EndDisabled();
@@ -179,10 +240,10 @@ void drawTabTeleport(MenuCtx& c) {
                     int wpDel = -1;
                     for (size_t i = 0; i < g_ways.size(); ++i) {
                         ImGui::PushID(1000 + (int)i);
-                        bool canTp = haveWrite;
+                        bool canTp = haveWrite && !Stunt::active();
                         if (!canTp) ImGui::BeginDisabled();
                         if (ImGui::Button("TP", ImVec2(36.0f, 0.0f)) && canTp) {
-                            g_tpTargetPos = g_ways[i].p; // the loop writes
+                            g_tpTargetPos = g_ways[i].p; // the loop starts the dash
                             g_tpPosTick = nowLoop;
                             snprintf(g_tpPosName, sizeof g_tpPosName, "%s",
                                      g_ways[i].name.c_str());

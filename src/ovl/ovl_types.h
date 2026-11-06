@@ -21,6 +21,13 @@ struct Waypoint {
         uint64_t prim = 0; // HRP Primitive (Position at +posOff)
         uint64_t headPrim = 0; // Head Primitive (bone 0), 0 if unresolved
         uint64_t limbPrim[4]{}; // left/right arm and leg anchors
+        // BasePart instance each primitive came from. Parent(part) must still
+        // be `model`: a destroyed or re-parented part leaves a readable
+        // primitive whose Position never changes again, and the aim then locks
+        // that frozen point (camera stops following the target).
+        uint64_t rootPart = 0;
+        uint64_t headPart = 0;
+        uint64_t limbPart[4]{};
         uint64_t humanoid = 0;
         uint64_t team = 0;
         bool self = false;

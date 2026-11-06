@@ -1,4 +1,30 @@
 # build artifacts
 *.exe
 *.log
+obj/
 backup/
+
+# runtime state (sinh ra khi chạy, không phải source)
+overlay.cfg
+imgui.ini
+profiles/
+
+# offsets dump của máy đang chạy — đừng commit cache/good của máy khác
+# (offsets_fixtures/ thì commit: đó là fixture cho -offtest)
+offsets_cache.json
+offsets_good.json
+
+# RE output / scratch (vel_runtime.exe, disasm 49 MB, ghidra project, scan dump)
+ghidra_proj/
+scan_results/
+vel_disasm.txt
+vel_*.c
+vel_*.err
+cap_*.txt
+
+# tài liệu cá nhân, không liên quan tới build
+transcripts/
+
+# imgui vendored: binary di k�m examples/fonts, build kh�ng d�ng
+thirdparty/imgui-master/examples/libs/
+thirdparty/imgui-master/misc/fonts/*.ttf

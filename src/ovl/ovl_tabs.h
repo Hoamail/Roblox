@@ -31,3 +31,4 @@ void drawTabWorld(MenuCtx& c);
 void drawTabServer(MenuCtx& c);
 void drawTabTools(MenuCtx& c);
 void drawTabMisc(MenuCtx& c);
+void drawTabStunt(MenuCtx& c);

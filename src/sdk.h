@@ -19,6 +19,8 @@ public:
     Memory& m;
     const Offsets& o;
     uint64_t base = 0;
+    // Set once if the two DataModel routes disagree (dump/offset trouble).
+    bool dmMismatch = false;
 
     SDK(Memory& mem, const Offsets& off) : m(mem), o(off) {}
 
@@ -38,9 +40,24 @@ public:
     }
 
     bool dataModel(uint64_t& dm) {
-        uint64_t fake = 0;
-        if (!m.read(base + o.fakeDataModelPtr, fake) || !fake) return false;
-        return m.read(fake + (uint64_t)o.fakeRealDataModel, dm) && dm;
+        // Two independent routes from theo's dump:
+        //   A) FakeDataModel.Pointer      -> fake -> RealDataModel
+        //   B) VisualEngine.Pointer       -> +FakeDataModel -> RealDataModel
+        // Both are published, so a dump that zeroes/renames one key still
+        // resolves; a disagreement sets dmMismatch for the caller to log once.
+        uint64_t a = 0, b = 0, fake = 0, ve = 0, f2 = 0;
+        if (o.fakeDataModelPtr && o.fakeRealDataModel &&
+            m.read(base + o.fakeDataModelPtr, fake) && plausiblePtr(fake))
+            m.read(fake + (uint64_t)o.fakeRealDataModel, a);
+        if (o.visualEnginePtr && o.visualEngineFakeDataModel && o.fakeRealDataModel &&
+            m.read(base + o.visualEnginePtr, ve) && plausiblePtr(ve) &&
+            m.read(ve + (uint64_t)o.visualEngineFakeDataModel, f2) && plausiblePtr(f2))
+            m.read(f2 + (uint64_t)o.fakeRealDataModel, b);
+        if (!plausiblePtr(a)) a = 0;
+        if (!plausiblePtr(b)) b = 0;
+        if (a && b && a != b) dmMismatch = true;
+        dm = a ? a : b;
+        return dm != 0;
     }
     bool workspace(uint64_t dm, uint64_t& ws) {
         return m.read(dm + (uint64_t)o.dataModelWorkspace, ws) && ws;
@@ -84,17 +101,24 @@ public:
         return best.size() >= 3 ? best : "";
     }
 
-    // Instance name: TString lives at container+8.
+    // Instance name: NameContainer holds a pointer to the name TString, which
+    // starts at Instance::Name. Both come from the dump; the 112/+8 pair is the
+    // pre-9ac859 layout and stays as a fallback.
     std::string readName(uint64_t obj) {
         uint64_t cont = 0;
+        if (o.instanceNameContainer &&
+            m.read(obj + (uint64_t)o.instanceNameContainer, cont) && cont) {
+            std::string s = readTStringDirect(cont + (uint64_t)o.instanceName);
+            if (!s.empty()) return s;
+        }
         if (!m.read(obj + 112, cont) || !cont) return "";
         return readTStringDirect(cont + 8);
     }
 
     std::string readClass(uint64_t obj) {
         uint64_t desc = 0, dstr = 0;
-        if (!m.read(obj + 24, desc) || !desc) return "";
-        if (!m.read(desc + 8, dstr) || !dstr) return "";
+        if (!m.read(obj + (uint64_t)o.instanceClassDescriptor, desc) || !desc) return "";
+        if (!m.read(desc + (uint64_t)o.instanceClassName, dstr) || !dstr) return "";
         return readRun(dstr);
     }
 
@@ -143,7 +167,7 @@ public:
     void walkChildren(uint64_t obj, F cb) {
         uint64_t vec = 0, b = 0, e = 0;
         if (!m.read(obj + (uint64_t)o.instanceChildrenStart, vec)) return;
-        if (!m.read(vec, b) || !m.read(vec + 8, e)) return;
+        if (!m.read(vec, b) || !m.read(vec + (uint64_t)o.instanceChildrenEnd, e)) return;
         if (e <= b || e - b > 0x20000) return;
         long long n = (long long)((e - b) / 16);
         if (n > 2000) return;

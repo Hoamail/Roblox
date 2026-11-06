@@ -1,6 +1,7 @@
 #pragma once
 // Helper UI dùng chung cho mọi tab. Định nghĩa nằm ở ovl_ui.cpp (S1.2).
 #include "ovl_types.h"
+#include "ovl_cfg.h"
 #include <string>
 #include <windows.h>
 
@@ -11,6 +12,7 @@ extern int* g_capVk;
 extern const char* g_capCfg;
 extern DWORD g_capT0;
 extern bool g_capDrained;
+extern bool g_capPollReady;
 
 void hitMark();
 void markChildArea();
@@ -25,6 +27,3 @@ bool sliderFloatCfg(const char* label, float* v, float lo, float hi,
                     const char* fmt, const char* cfgKey);
 bool sliderIntCfg(const char* label, int* v, int lo, int hi,
                   const char* fmt, const char* cfgKey);
-
-// định nghĩa ở overlay.cpp (file IO + exePath) — S2 mới move
-bool upsertCfgKey(const char* key, const char* value);

@@ -139,7 +139,9 @@ void drawTabServer(MenuCtx& c) {
                     ImGui::TextDisabled("no list yet - Refresh");
                 else if (lstate == 3) {
                     if (lcode > 0)
-                        ImGui::TextDisabled("failed: HTTP %d (old list kept)", lcode);
+                        ImGui::TextDisabled(
+                            "failed: HTTP %d (old list kept; wait before retry)",
+                            lcode);
                     else
                         ImGui::TextDisabled("failed: no response (old list kept)");
                 } else if (filt.empty())

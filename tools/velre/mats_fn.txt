@@ -1,0 +1,103 @@
+static void dumpFloats(Memory& m, uint64_t addr, int n) {
+    std::vector<float> f(n);
+    if (!readBytesMem(m, addr, f.data(), (size_t)n * 4)) {
+        printf("  dumpf: read fail at 0x%llx\n", (unsigned long long)addr);
+        return;
+    }
+    for (int i = 0; i < n; i += 4) {
+        printf("   +0x%03x:", i * 4);
+        for (int k = 0; k < 4 && i + k < n; ++k) printf(" %+12.5f", f[i + k]);
+        printf("\n");
+    }
+}
+
+// Which 16-float windows inside VisualEngine actually track the camera?
+// Self-validating: waits until Camera.Rotation moves, then samples N times and
+// counts, per offset, how many samples differ from the baseline. A live
+// view*projection matrix must show up as a high-hit window.
+static void scanMatrices(Memory& m, const Offsets& o, const Targets& t, int ms) {
+    if (!t.ve) { printf("  mats: no VisualEngine\n"); return; }
+    const uint32_t SPAN = 0x2400;
+    std::vector<BYTE> base(SPAN);
+    if (!readBytesMem(m, t.ve, base.data(), SPAN)) { printf("  mats: read failed\n"); return; }
+
+    printf("  mats: ve=0x%llx span=0x%x\n", (unsigned long long)t.ve, SPAN);
+    printf("  mats: dump says ViewMatrix=%d\n", o.visualEngineViewMatrix);
+    if (o.visualEngineViewMatrix > 0 && (uint32_t)o.visualEngineViewMatrix + 64 <= SPAN) {
+        printf("  mats: dump-offset values:\n");
+        dumpFloats(m, t.ve + (uint64_t)o.visualEngineViewMatrix, 16);
+    }
+    if (o.visualEngineFakeDataModel > 0 && (uint32_t)o.visualEngineFakeDataModel + 8 <= SPAN) {
+        uint64_t fake = 0, rv = 0;
+        m.read(t.ve + (uint64_t)o.visualEngineFakeDataModel, fake);
+        if (o.visualEngineRenderView)
+            m.read(t.ve + (uint64_t)o.visualEngineRenderView, rv);
+        printf("  mats: ve+FakeDataModel(0x%x)=0x%llx  ve+RenderView(0x%x)=0x%llx\n",
+               o.visualEngineFakeDataModel, (unsigned long long)fake,
+               o.visualEngineRenderView, (unsigned long long)rv);
+        if (o.visualEngineDimensions)
+            printf("  mats: ve+Dimensions(0x%x) ints=(%d %d)\n",
+                   o.visualEngineDimensions,
+                   *(int*)(base.data() + (o.visualEngineDimensions & (SPAN - 1))),
+                   *(int*)(base.data() + ((o.visualEngineDimensions + 4) & (SPAN - 1))));
+    }
+
+    // candidates: aligned, all-finite, plausible magnitude
+    std::vector<uint32_t> cand;
+    for (uint32_t off = 0; off + 64 <= SPAN; off += 4) {
+        const float* f = (const float*)(base.data() + off);
+        bool ok = true;
+        for (int i = 0; i < 16; ++i)
+            if (!std::isfinite(f[i]) || fabsf(f[i]) > 1e6f) { ok = false; break; }
+        if (ok) cand.push_back(off);
+    }
+
+    // wait for the camera to actually move (max 3 s)
+    float r0[9]{}, r1[9]{};
+    bool camMoved = false;
+    uint64_t rotAddr = t.cam + (uint64_t)o.cameraRotation;
+    m.read(rotAddr, r0);
+    for (int w = 0; w < 30 && !camMoved; ++w) {
+        Sleep(100);
+        if (!m.read(rotAddr, r1)) break;
+        for (int i = 0; i < 9; ++i)
+            if (r0[i] != r1[i]) { camMoved = true; break; }
+    }
+    printf("  mats: camera rotated during window = %s\n", camMoved ? "yes" : "no");
+
+    const int K = 12;
+    std::vector<int> hits(cand.size(), 0);
+    std::vector<BYTE> buf(SPAN);
+    int samples = 0;
+    for (int s = 0; s < K; ++s) {
+        Sleep((DWORD)(ms > 0 ? ms : 20));
+        if (!readBytesMem(m, t.ve, buf.data(), SPAN)) break;
+        ++samples;
+        for (size_t ci = 0; ci < cand.size(); ++ci) {
+            const float* a = (const float*)(base.data() + cand[ci]);
+            const float* b = (const float*)(buf.data() + cand[ci]);
+            int ch = 0;
+            for (int i = 0; i < 16; ++i) if (a[i] != b[i]) ++ch;
+            if (ch > 0) hits[ci] += ch;
+        }
+        memcpy(base.data(), buf.data(), SPAN);   // rolling baseline
+    }
+
+    struct R { uint32_t off; int hits; };
+    std::vector<R> out;
+    for (size_t ci = 0; ci < cand.size(); ++ci)
+        if (hits[ci] > 0) out.push_back({ cand[ci], hits[ci] });
+    std::sort(out.begin(), out.end(),
+              [](const R& x, const R& y) { return x.hits > y.hits; });
+    printf("  mats: samples=%d candidates=%zu changing=%zu\n", samples, cand.size(),
+           out.size());
+    int shown = 0;
+    for (auto& r : out) {
+        if (shown++ >= 24) break;
+        const float* f = (const float*)(base.data() + r.off);
+        printf("    off=0x%-5x hits=%3d  r0=(%+8.4f %+8.4f %+8.4f %+9.3f) "
+               "r2=(%+8.4f %+8.4f %+8.4f %+9.3f) m15=%+.4f\n",
+               r.off, r.hits, f[0], f[1], f[2], f[3], f[8], f[9], f[10], f[11],
+               f[15]);
+    }
+}

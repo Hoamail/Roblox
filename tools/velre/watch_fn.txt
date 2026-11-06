@@ -1,0 +1,137 @@
+static double qpcSec2() {
+    static LARGE_INTEGER f{};
+    if (!f.QuadPart) QueryPerformanceFrequency(&f);
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    return (double)c.QuadPart / (double)f.QuadPart;
+}
+
+// High-rate sampler on Roblox Camera.Rotation (+ VisualEngine.ViewMatrix).
+// Answers: how often does something write the camera basis, at what cadence,
+// and does the engine's render matrix follow those bytes. Read-only.
+static void watchCamera(Memory& m, const Offsets& o, const Targets& t, double secs) {
+    if (!t.cam || !o.cameraRotation) { printf("  watch: no camera/rotation\n"); return; }
+    uint64_t rotAddr = t.cam + (uint64_t)o.cameraRotation;
+    uint64_t vmAddr = (o.visualEngineViewMatrix && t.ve)
+                          ? t.ve + (uint64_t)o.visualEngineViewMatrix : 0;
+    uint64_t posAddr = o.cameraPosition ? t.cam + (uint64_t)o.cameraPosition : 0;
+    printf("  watch %.1fs  rot=0x%llx vm=0x%llx pos=0x%llx\n", secs,
+           (unsigned long long)rotAddr, (unsigned long long)vmAddr,
+           (unsigned long long)posAddr);
+
+    double t0 = qpcSec2(), endT = t0 + secs;
+    float prev[9]{};
+    bool havePrev = false;
+    uint64_t samples = 0, events = 0, vmChanges = 0;
+    double lastEvT = 0;
+    std::vector<uint32_t> dts;
+    double alignSum = 0, alignMax = 0;
+    int alignN = 0, alignBad = 0;
+    int logged = 0;
+    float prevVmFwd[3]{};
+    bool haveVmPrev = false;
+    double nextReport = t0 + 1.0;
+    uint64_t rotEventsThisSecond = 0;
+
+    while (true) {
+        double now = qpcSec2();
+        if (now >= endT) break;
+        float cur[9]{};
+        if (!m.read(rotAddr, cur)) { printf("  watch: read lost\n"); break; }
+        ++samples;
+        bool changed = false;
+        if (havePrev)
+            for (int i = 0; i < 9; ++i)
+                if (cur[i] != prev[i]) { changed = true; break; }
+        if (changed) {
+            double dtMs = lastEvT > 0 ? (now - lastEvT) * 1000.0 : 0.0;
+            if (lastEvT > 0 && dtMs < 10000.0)
+                dts.push_back((uint32_t)std::lround(dtMs * 1000.0));
+            lastEvT = now;
+            ++events;
+            ++rotEventsThisSecond;
+            Basis b = basisFromRot(cur);
+            float vm[16]{};
+            bool haveVm = vmAddr && m.read(vmAddr, vm);
+            double errDeg = NAN;
+            if (haveVm) {
+                float fwd[3] = { vm[8], vm[9], vm[10] };
+                float ln = sqrtf(dot3(fwd, fwd));
+                if (ln > 1e-6f)
+                    for (auto& v : fwd) v /= ln;
+                float al = fabsf(dot3(fwd, b.back));
+                if (al > 1.0f) al = 1.0f;
+                errDeg = acosf(al) * 57.2957795f;
+                alignSum += errDeg;
+                ++alignN;
+                if (errDeg > alignMax) alignMax = errDeg;
+                if (errDeg > 2.0) ++alignBad;
+            }
+            if (logged < 200) {
+                ++logged;
+                float pos[3]{};
+                bool hp = posAddr && m.read(posAddr, pos);
+                printf("  ev %5llu t=%7.3fms dt=%6lluus err=%s%.2fdeg "
+                       "back=(%+.4f %+.4f %+.4f) pos=(%.2f %.2f %.2f)\n",
+                       (unsigned long long)events, (now - t0) * 1000.0,
+                       (unsigned long long)std::lround(dtMs * 1000.0),
+                       haveVm ? "" : "na/", haveVm ? errDeg : 0.0f, b.back[0],
+                       b.back[1], b.back[2], pos[0], pos[1], pos[2]);
+            }
+        }
+        memcpy(prev, cur, sizeof(prev));
+        havePrev = true;
+
+        // engine render matrix change counter (cheap enough at this rate)
+        if (vmAddr) {
+            float vm[16]{};
+            if (m.read(vmAddr, vm)) {
+                float fwd[3] = { vm[8], vm[9], vm[10] };
+                if (haveVmPrev) {
+                    float d = fabsf(fwd[0] - prevVmFwd[0]) +
+                              fabsf(fwd[1] - prevVmFwd[1]) +
+                              fabsf(fwd[2] - prevVmFwd[2]);
+                    if (d > 1e-7f) ++vmChanges;
+                }
+                memcpy(prevVmFwd, fwd, sizeof(fwd));
+                haveVmPrev = true;
+            }
+        }
+
+        if (now >= nextReport) {
+            nextReport += 1.0;
+            printf("  [%5.2fs] rot_events=%llu (%.1f/s) vm_changes=%llu "
+                   "samples/s=%.0f\n",
+                   now - t0, (unsigned long long)events,
+                   (double)rotEventsThisSecond, (unsigned long long)vmChanges,
+                   (double)samples / (now - t0 + 1e-9));
+            rotEventsThisSecond = 0;
+            fflush(stdout);
+        }
+    }
+    double dur = qpcSec2() - t0;
+    printf("  watch summary over %.2fs: samples=%llu (%.0f/s) rot_events=%llu "
+           "(%.1f/s) vm_changes=%llu\n",
+           dur, (unsigned long long)samples, (double)samples / dur,
+           (unsigned long long)events, (double)events / dur,
+           (unsigned long long)vmChanges);
+    if (!dts.empty()) {
+        std::sort(dts.begin(), dts.end());
+        double sum = 0;
+        for (auto d : dts) sum += d;
+        printf("  dt: n=%zu mean=%.0fus p10=%u p50=%u p90=%u p99=%u max=%u\n",
+               dts.size(), sum / (double)dts.size(),
+               dts[(size_t)(dts.size() * 0.10)], dts[dts.size() / 2],
+               dts[(size_t)(dts.size() * 0.90)],
+               dts[(size_t)(dts.size() * 0.99)], dts.back());
+    } else {
+        printf("  dt: no consecutive rotation changes\n");
+    }
+    if (alignN)
+        printf("  vm-follow: n=%d mean_err=%.3fdeg max_err=%.3fdeg "
+               "over2deg=%d (%.1f%%)\n",
+               alignN, alignSum / alignN, alignMax, alignBad,
+               100.0 * alignBad / alignN);
+    else
+        printf("  vm-follow: no samples (view matrix unreadable)\n");
+}

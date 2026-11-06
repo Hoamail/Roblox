@@ -2,6 +2,7 @@
 // State chia sẻ: overlay.cpp sở hữu định nghĩa, tab chỉ đọc/ghi qua extern.
 // Sinh tự động (Appendix B) + prototype thêm tay (S1.3).
 #include "ovl_types.h"
+#include "ovl_stunt.h"   // StuntParams (Stunt tab, index 8)
 #include <string>
 #include <vector>
 
@@ -61,6 +62,11 @@ extern int cfgSrvGeo;
 extern int cfgSrvHopFresh;
 extern int cfgSrvHopMin;
 extern int cfgTpNpc;
+extern int cfgTpSpeed;
+extern int g_specWant;        // Teleport tab: 1 = spectate g_specKey
+extern int g_specIsPlayer;    // 1 = Player instance, 0 = NPC Model
+extern uint64_t g_specKey;
+extern char g_specName[48];
 extern int cfgTrigEnabled;
 extern int cfgTrigKey;
 extern int cfgTrigKeyMode;
@@ -96,6 +102,17 @@ extern Vec3 g_tpTargetPos;
 extern uint64_t g_tpTargetPrim;
 extern std::vector<Waypoint> g_ways;
 
+// ---- Stunt tab (index 8) ----
+// cfg is the single source of truth; the main loop copies it into
+// g_stuntParams each frame and hands that to the writer thread.
+extern int cfgStuntEnabled, cfgStuntPreset, cfgStuntRagdoll, cfgStuntLoop,
+    cfgStuntHover, cfgStuntKey, cfgStuntMode;
+extern float cfgStuntSpeed, cfgStuntAmp;
+extern int g_stuntActive;        // hotkey state (session only, like g_flyActive)
+extern int g_stuntHold;          // "Run (hold)" button, used when stunt.key=0
+extern uint64_t g_stuntTargetPrim;
+extern StuntParams g_stuntParams;
+
 // ---- World tab (phát hiện bởi worldTick trong overlay.cpp) ----
 extern uint64_t wLighting, wTerrain, wAtmosphere;
 extern uint64_t wBloom, wBlur, wCC, wLocalPlr;
@@ -119,3 +136,6 @@ bool profileExists(const std::string& slot);
 bool saveProfileSlot(const std::string& slot);
 bool loadProfileSlot(const std::string& slot);
 void setPlaceProfile(uint64_t place, const std::string& slot);
+// ---- hitbox profile (EntityCtx::refreshEnts gọi khi đổi PlaceId) ----
+void loadHitboxProfile(uint64_t place);
+void hitboxRestoreAll(Memory& m, const Offsets& o);

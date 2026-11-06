@@ -1,0 +1,4 @@
+# Project quy ước: file nguồn LF-only, không BOM (xem AGENTS.md §Gotchas).
+# Không để git tự đổi EOL khi checkout: core.autocrlf mặc định của máy này là true
+# và đã từng làm hỏng `src\overlay.cpp` khi `git checkout`. `-text` = giữ nguyên byte.
+* -text

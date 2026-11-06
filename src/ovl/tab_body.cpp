@@ -1,6 +1,7 @@
 #include "ovl_tabs.h"
 #include "ovl_ui.h"
 #include "ovl_state.h"
+#include "ovl_fly.h"
 #include "imgui.h"
 
 void drawTabBody(MenuCtx& c) {
@@ -27,6 +28,15 @@ void drawTabBody(MenuCtx& c) {
                 hitMark();
                 ImGui::SameLine();
                 keyStateLabel(cfgFlyKey, flyApply);
+                // Writer telemetry: fly is held by a dedicated high-rate
+                // thread (ovl_fly.cpp). If Fly+key are on and this stays
+                // at 0, the writer never got the character primitive.
+                if (Fly::active()) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f),
+                                       "%.2fM w/s",
+                                       Fly::writesPerSec() / 1e6f);
+                }
 
                 if (chkInt("Speed", &cfgPlySpeed)) {
                     if (!cfgPlySpeed) g_speedActive = 0;
