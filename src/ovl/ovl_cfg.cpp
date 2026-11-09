@@ -103,8 +103,16 @@ int loadToggleKey() {
                   "stunt.mode=0\n"
                   "# teleport is the menu's Teleport tab (players + TP buttons)\n"
                   "tp.npc=0\n"
+                  "# teleport writes Primitive.Position every pass (Stunt Piggyback):\n"
+                  "# tp.instant=1 snaps straight to the target, 0 travels at tp.speed\n"
+                  "tp.instant=1\n"
                   "# guided-dash speed used by the TP buttons (studs/s)\n"
                   "tp.speed=300\n"
+                  "# saved-waypoint highlighter: marker colour is packed 0xRRGGBB,\n"
+                  "# max is studs (0 = no limit; drawn by ovl_esp.cpp)\n"
+                  "wp.hl=1\n"
+                  "wp.hlcolor=3528959\n"
+                  "wp.hlmax=0\n"
                   "# clickable menu panel: the title-bar triangle collapses it,\n"
                   "# pos/size are written back when you drag/resize it\n"
                   "menu.collapsed=0\n"
@@ -346,6 +354,14 @@ void loadAimCfg() {
             cfgTpNpc = atoi(line + 7) ? 1 : 0;
         if (strncmp(line, "tp.speed=", 9) == 0)
             cfgTpSpeed = atoi(line + 9);
+        if (strncmp(line, "tp.instant=", 11) == 0)
+            cfgTpInstant = atoi(line + 11) ? 1 : 0;
+        if (strncmp(line, "wp.hl=", 6) == 0)
+            cfgWpHl = atoi(line + 6) ? 1 : 0;
+        if (strncmp(line, "wp.hlcolor=", 11) == 0)
+            cfgWpHlColor = atoi(line + 11) & 0xFFFFFF;
+        if (strncmp(line, "wp.hlmax=", 9) == 0)
+            cfgWpHlMax = atoi(line + 9);
         if (strncmp(line, "hud.on=", 7) == 0)
             cfgHudOn = atoi(line + 7) ? 1 : 0;
         if (strncmp(line, "hud.feats=", 10) == 0)
@@ -492,6 +508,14 @@ void loadAimCfg() {
     if (cfgFlyEnabled != 0) cfgFlyEnabled = 1;
     if (cfgTpSpeed < 60) cfgTpSpeed = 60;
     if (cfgTpSpeed > 1200) cfgTpSpeed = 1200;
+    if (cfgTpInstant != 0) cfgTpInstant = 1;
+    if (cfgWpHlMax < 0) cfgWpHlMax = 0;
+    if (cfgWpHlMax > 10000) cfgWpHlMax = 10000;
+    // Pure black is the overlay's colour key (invisible + click-through), so a
+    // waypoint marker must never be packed exactly 0x000000.
+    if (cfgWpHlColor < 0x010101) cfgWpHlColor = 0x35D8FF;
+    if (cfgWpHlColor > 0xFFFFFF) cfgWpHlColor = 0x35D8FF;
+    if (cfgWpHl != 0) cfgWpHl = 1;
     // Stunt tab: keep every persisted value inside its slider/table range. The
     // preset clamp must move with the table (Stunt::presetCount) so an old
     // stunt.preset=13 can never point outside the array.

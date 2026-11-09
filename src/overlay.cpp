@@ -475,7 +475,8 @@ int cfgMenuTab = 0;           // active tab (0 Body 1 Combat 2 Visual 3 TP 4 Wor
 uint64_t g_tpTargetPrim = 0;  // Teleport tab: target HRP, consumed by loop
 DWORD g_tpRequestTick = 0;    // when that click happened
 int cfgTpNpc = 0;             // Teleport tab: also list NPCs/mobs
-int cfgTpSpeed = 300;         // Teleport: guided-dash speed (studs/s)
+int cfgTpSpeed = 300;         // Teleport: gradual-mode speed (studs/s)
+int cfgTpInstant = 1;         // Teleport: 1 = Piggyback snap (default)
 // Spectate (Teleport tab): the tab only sets a request; the main loop resolves
 // the target and publishes it to ovl_spectate. Session-only, never in cfg.
 int g_specWant = 0;           // 1 = follow the key below
@@ -501,6 +502,11 @@ int cfgAutoProfile = 0;        // auto-load the profile bound to a place
 // keybind capture runs in the main loop instead, where GetAsyncKeyState works.
 // (the g_capVk/g_capCfg/g_capT0 slots live above keyBindWidget)
 std::vector<Waypoint> g_ways;   // overlay.cfg: wp.<n>=<name>|<x>,<y>,<z>
+// Waypoint highlighter (Teleport tab). Drawn by ovl_esp.cpp from the same
+// view matrix as the ESP, but independent of the ESP master switch.
+int cfgWpHl = 1;
+int cfgWpHlColor = 0x35D8FF; // cyan, distinct from the ESP red/green/orange
+int cfgWpHlMax = 0;          // studs, 0 = no limit
 // Waypoint / click-teleport request (the loop does the write, never the menu).
 Vec3 g_tpTargetPos{};
 DWORD g_tpPosTick = 0;
@@ -2420,15 +2426,16 @@ int main(int argc, char** argv) {
                         if (p) ghost[gn++] = p;
                 }
                 if (Tp::request(m, o, selfPrim, want, dst,
-                                (float)cfgTpSpeed, ghost, gn)) {
+                                (float)cfgTpSpeed, ghost, gn,
+                                cfgTpInstant != 0)) {
                     snprintf(tpMsg, sizeof tpMsg, "tp -> %s (%.0fm)",
                              ents[best].tag.c_str(), d);
                     tpMsgTick = nowLoop;
                     diagRate("teleport", 0,
-                             "dash to %s dist=%.1f speed=%d",
+                             "tp to %s dist=%.1f speed=%d",
                              ents[best].tag.c_str(), d, cfgTpSpeed);
                 } else {
-                    snprintf(tpMsg, sizeof tpMsg, "tp: dash unsupported");
+                    snprintf(tpMsg, sizeof tpMsg, "tp: writer unavailable");
                     tpMsgTick = nowLoop;
                 }
             }
@@ -2467,14 +2474,14 @@ int main(int argc, char** argv) {
                         if (p) ghost[gn++] = p;
                 }
                 if (Tp::request(m, o, selfPrim, 0, dst, (float)cfgTpSpeed,
-                                ghost, gn)) {
+                                ghost, gn, cfgTpInstant != 0)) {
                     snprintf(tpMsg, sizeof tpMsg, "wp %s (%.0fm)", g_tpPosName, d);
                     tpMsgTick = nowLoop;
                     diagRate("wptp", 0,
-                             "waypoint dash %s dist=%.1f speed=%d",
+                             "waypoint tp %s dist=%.1f speed=%d",
                              g_tpPosName, d, cfgTpSpeed);
                 } else {
-                    snprintf(tpMsg, sizeof tpMsg, "wp: dash unsupported");
+                    snprintf(tpMsg, sizeof tpMsg, "wp: writer unavailable");
                     tpMsgTick = nowLoop;
                 }
             }
@@ -2485,6 +2492,12 @@ int main(int argc, char** argv) {
             int tr = Tp::takeResult();
             if (tr > 0) {
                 snprintf(tpMsg, sizeof tpMsg, "tp: arrived");
+                tpMsgTick = nowLoop;
+            } else if (tr == -2) {
+                // The engine kept the pre-write position: report it instead of
+                // the old false "arrived" ("position write rejected").
+                snprintf(tpMsg, sizeof tpMsg,
+                         "tp: blocked - position write was rejected");
                 tpMsgTick = nowLoop;
             } else if (tr < 0) {
                 snprintf(tpMsg, sizeof tpMsg, "tp: timeout");

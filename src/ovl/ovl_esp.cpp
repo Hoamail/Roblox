@@ -231,6 +231,79 @@ void EspCtx::draw(ImDrawList* dl, const float* vm) {
             }
         }
     }
+    // ---- saved-waypoint highlighter (Teleport tab) -----------------------
+    // Independent of cfgEspOn: markers are a navigation aid, not an ESP
+    // category. Drawn from the same projection so they land exactly on the
+    // saved world position; a beam + diamond marks the spot, names/distance sit
+    // above it, and off-screen waypoints get an edge arrow like the OOF boxes.
+    if (cfgWpHl && !g_ways.empty() && vm) {
+        ImU32 wcol = rgb(cfgWpHlColor);
+        ImU32 wedge = IM_COL32(0, 0, 0, 220);
+        for (size_t wi = 0; wi < g_ways.size(); ++wi) {
+            const Waypoint& w = g_ways[wi];
+            if (!std::isfinite(w.p.x) || !std::isfinite(w.p.y) ||
+                !std::isfinite(w.p.z))
+                continue;
+            float dist = -1.0f;
+            if (espSelfOk) {
+                float dx = w.p.x - espSelf.x, dy = w.p.y - espSelf.y,
+                      dz = w.p.z - espSelf.z;
+                dist = sqrtf(dx * dx + dy * dy + dz * dz);
+            }
+            if (cfgWpHlMax > 0 && dist >= 0.0f && dist > (float)cfgWpHlMax)
+                continue;
+            Vec3 mark{ w.p.x, w.p.y + 1.0f, w.p.z };
+            int px = 0, py = 0;
+            bool onScreen = w2s(mark, vm, px, py);
+            if (!onScreen) {
+                // Behind the camera or outside the client rect: point at it.
+                float nx = 0.0f, ny = 0.0f;
+                w2sRay(mark, nx, ny);
+                float m2 = fmaxf(fabsf(nx), fabsf(ny));
+                if (m2 <= 1.0f) continue;
+                float ax = nx / m2, ay = ny / m2;
+                float bw = (float)sw * 0.42f, bh = (float)sh * 0.42f;
+                float ex = (float)sw * 0.5f + ax * bw;
+                float ey = (float)sh * 0.5f + ay * bh;
+                float p2x = -ay, p2y = ax;
+                ImVec2 tip(ex + ax * 10.0f, ey + ay * 10.0f);
+                dl->AddTriangleFilled(
+                    tip, ImVec2(ex + p2x * 7.0f, ey + p2y * 7.0f),
+                    ImVec2(ex - p2x * 7.0f, ey - p2y * 7.0f), wcol);
+                ImVec2 ts = ImGui::CalcTextSize(w.name.c_str());
+                float lx = tip.x - ts.x * 0.5f, ly = tip.y - ts.y - 6.0f;
+                dl->AddText(ImVec2(lx + 1.0f, ly + 1.0f), wedge,
+                            w.name.c_str());
+                dl->AddText(ImVec2(lx, ly), wcol, w.name.c_str());
+                continue;
+            }
+            // Vertical beam so the marker is readable from a distance even when
+            // the diamond sits on unrelated geometry.
+            Vec3 top{ w.p.x, w.p.y + 6.0f, w.p.z };
+            int tx = 0, ty = 0;
+            bool topOk = w2s(top, vm, tx, ty);
+            if (topOk)
+                dl->AddLine(ImVec2((float)px, (float)py),
+                            ImVec2((float)tx, (float)ty), wcol, 2.0f);
+            float s = 7.0f;
+            ImVec2 c0((float)px, (float)py);
+            ImVec2 pts[4] = { ImVec2(c0.x, c0.y - s), ImVec2(c0.x + s, c0.y),
+                              ImVec2(c0.x, c0.y + s), ImVec2(c0.x - s, c0.y) };
+            dl->AddConvexPolyFilled(pts, 4,
+                                    (wcol & 0x00FFFFFFu) | 0x70000000u);
+            dl->AddPolyline(pts, 4, wcol, ImDrawFlags_Closed, 2.0f);
+            char lb[112];
+            if (dist >= 0.0f)
+                snprintf(lb, sizeof lb, "%s  %.0fm", w.name.c_str(), dist);
+            else
+                snprintf(lb, sizeof lb, "%s", w.name.c_str());
+            ImVec2 ts = ImGui::CalcTextSize(lb);
+            float lx = (float)px - ts.x * 0.5f;
+            float ly = (topOk ? (float)ty : (float)py) - ts.y - 6.0f;
+            dl->AddText(ImVec2(lx + 1.0f, ly + 1.0f), wedge, lb);
+            dl->AddText(ImVec2(lx, ly), wcol, lb);
+        }
+    }
 }
 
 bool EspCtx::w2s(const Vec3& w, const float* mt, int& sx, int& sy) {

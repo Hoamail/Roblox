@@ -63,6 +63,11 @@ extern int cfgSrvHopFresh;
 extern int cfgSrvHopMin;
 extern int cfgTpNpc;
 extern int cfgTpSpeed;
+extern int cfgTpInstant; // 1 = Piggyback snap, 0 = travel at cfgTpSpeed
+// Teleport tab: saved-waypoint highlighter (drawn by ovl_esp.cpp).
+extern int cfgWpHl;      // 1 = draw a marker over every saved waypoint
+extern int cfgWpHlColor; // packed 0xRRGGBB
+extern int cfgWpHlMax;   // studs, 0 = no limit
 extern int g_specWant;        // Teleport tab: 1 = spectate g_specKey
 extern int g_specIsPlayer;    // 1 = Player instance, 0 = NPC Model
 extern uint64_t g_specKey;

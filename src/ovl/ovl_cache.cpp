@@ -273,7 +273,11 @@ void EntityCtx::refreshEnts() {
     // map can't stall the render thread; the scan cursor advances between
     // refreshes without caching incomplete streamed-in models as props.
     bool npcSweepComplete = false;
-    if (cfgAimNPCs) {
+    // The Teleport tab lists NPCs too, so the sweep must run when either the
+    // aim NPC filter or the Teleport "NPCs" checkbox asks for it. Gating this
+    // on cfgAimNPCs alone made the Teleport NPC toggle a no-op (no NPC ever
+    // entered the cache, so the list stayed empty).
+    if (cfgAimNPCs || cfgTpNpc) {
         uint64_t ws = 0, selfModel = 0;
         if (o.dataModelWorkspace && m.read(dm + (uint64_t)o.dataModelWorkspace, ws) && ws) {
             for (auto& kv : ecache) {
