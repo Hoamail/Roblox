@@ -28,3 +28,24 @@ transcripts/
 # imgui vendored: binary di kèm examples/fonts, build không dùng
 thirdparty/imgui-master/examples/libs/
 thirdparty/imgui-master/misc/fonts/*.ttf
+# --- from GitHub initial commit (README/LICENSE/opencode intro) ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+.env
+.env.*
+*.key
+*.pem
+node_modules/
+npm-debug.log*
+.sourcemap.json
+*.rbxl
+*.rbxm
+*.rbxlx
+*.rbxmx
+build/
+dist/
+out/
+*.tmp
+*.bak
+.opencode/
