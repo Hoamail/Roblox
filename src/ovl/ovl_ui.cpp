@@ -5,6 +5,7 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <cctype>
+#include <cstring>
 #include <utility>
 
 std::vector<HitRect> g_menuHits;
@@ -144,12 +145,57 @@ void keyStateLabel(int vk, bool applying) {
 // polled in the main loop (see the capture block there), not by ImGui.
 int* g_capVk = nullptr;         // slot being rebound
 const char* g_capCfg = nullptr; // its overlay.cfg key
-DWORD g_capT0 = 0;              // ignore the click that started capture
-bool g_capDrained = false;      // stale "pressed" bits of that click cleared
-bool g_capPollReady = false;    // previous down-state snapshot is initialized
+DWORD g_capT0 = 0;              // capture start (diag only)
+bool g_capSeeded = false;       // previous down-state snapshot is initialized
+
+void keyBindStart(int* vk, const char* cfgKey) {
+    g_capVk = vk;
+    g_capCfg = cfgKey;
+    g_capT0 = GetTickCount();
+    g_capSeeded = false; // first poll seeds the edge table from live state
+}
+
+void keyBindStop() {
+    g_capVk = nullptr;
+    g_capCfg = nullptr;
+    g_capSeeded = false;
+}
+
+// One step of the keybind capture edge detector. `down` is the caller's
+// GetAsyncKeyState snapshot (bit 0x8000 folded to bool, 256 entries).
+//
+// Only RISING edges count, and the edge table is seeded from the live state on
+// the first step, so whatever is already held when the capture opens (the click
+// itself, or a key some input hook left stuck in the async table) can neither
+// bind itself nor wedge the capture. An earlier version instead waited until
+// *every* vk was up before arming: one permanently-down vk in the async key
+// state froze every bind button at "[press key]" forever, with no way out but
+// pressing that exact (unknown) key again.
+int keyBindPoll(const bool* down, DWORD nowMs, int* outVk) {
+    static bool prev[0x100] = {};
+    if (!g_capVk || !down || !outVk) return 0;
+    if (!g_capSeeded) {
+        memcpy(prev, down, sizeof prev);
+        g_capSeeded = true;
+        return 0;
+    }
+    // A press that started after the capture opened produces the first edge.
+    for (int vk = 1; vk <= 0xFE; ++vk) {
+        if (!down[vk] || prev[vk]) continue;
+        memcpy(prev, down, sizeof prev);
+        *outVk = (vk == VK_ESCAPE) ? 0 : vk;
+        return 1;
+    }
+    memcpy(prev, down, sizeof prev);
+    // Long-open capture (user walked away) is harmless: the table keeps
+    // tracking, so the next real press still binds.
+    (void)nowMs;
+    return 0;
+}
 
 // Click to rebind: the next key/button press (see the capture poll in the main
-// loop) becomes the hotkey. Escape during capture unbinds.
+// loop) becomes the hotkey. Escape during capture unbinds, a second click on
+// the same button cancels.
 void keyBindWidget(const char* label, int* vk, const char* cfgKey,
                           float w) {
     ImGui::PushID(cfgKey);
@@ -164,14 +210,9 @@ void keyBindWidget(const char* label, int* vk, const char* cfgKey,
     if (cap) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.35f, 0.25f, 1.0f));
     if (ImGui::Button(lbl, ImVec2(w, 0.0f))) {
         if (cap) {
-            g_capVk = nullptr;
-            g_capCfg = nullptr;
+            keyBindStop();
         } else if (vk) {
-            g_capVk = vk;
-            g_capCfg = cfgKey;
-            g_capT0 = GetTickCount();
-            g_capDrained = false;
-            g_capPollReady = false;
+            keyBindStart(vk, cfgKey);
             if (g_diagState) {
                 printf("bind start %s\n", cfgKey);
                 fflush(stdout);
@@ -180,6 +221,97 @@ void keyBindWidget(const char* label, int* vk, const char* cfgKey,
     }
     if (cap) ImGui::PopStyleColor();
     ImGui::PopID();
+}
+
+// ---- keybind capture self-test (-bindtest): pure logic, no game ------------
+int runBindSelfTest() {
+    int checks = 0, fails = 0;
+    struct Sim {
+        bool down[0x100] = {};
+        int slot = 0;      // stands in for e.g. &cfgAimKey
+        int result = -2;   // -2 = still waiting
+        bool done = false;
+        void start(const char* cfg = "test.key") {
+            keyBindStop();
+            slot = 0;
+            result = -2;
+            done = false;
+            keyBindStart(&slot, cfg);
+        }
+        bool step() {
+            int nv = 0;
+            if (!keyBindPoll(down, 0, &nv)) return false;
+            result = nv;
+            done = true;
+            keyBindStop();
+            return true;
+        }
+        bool press(int vk) { down[vk] = true; return step(); }
+        void release(int vk) { down[vk] = false; step(); }
+    };
+    auto chk = [&](const char* what, bool ok) {
+        ++checks;
+        if (!ok) {
+            ++fails;
+            printf("FAIL %s\n", what);
+        }
+    };
+    printf("=== ext_overlay keybind capture self-test (no game) ===\n");
+    {   // [1] the click that opens the capture must not become the hotkey
+        Sim s; s.start();
+        s.down[0x01] = true;                       // LMB still down at poll 1
+        chk("[1] opening click does not bind", !s.step());
+        s.release(0x01);
+        chk("[1] release does not bind", !s.done);
+        chk("[1] next press binds", s.press(0x4B) && s.result == 0x4B);
+        printf("[1] click ignored, K captured: %s\n", s.result == 0x4B ? "ok" : "FAIL");
+    }
+    {   // [2] regression: one vk stuck down in the async table (input hook ate
+        // the KEYUP) used to freeze every bind button at "[press key]".
+        Sim s; s.start();
+        s.down[0x4B] = true;
+        chk("[2] seed with a stuck key", !s.step());
+        bool wedged = false;
+        for (int i = 0; i < 20; ++i) wedged = s.step() || wedged;
+        chk("[2] stuck key must not complete a bind", !wedged);
+        chk("[2] other key still binds", s.press(0x55) && s.result == 0x55);
+        printf("[2] stuck vk 0x4B does not wedge capture: %s\n",
+               s.result == 0x55 ? "ok" : "FAIL");
+        Sim t; t.start();
+        t.down[0x4B] = true; t.step();              // seeded while down
+        chk("[2] stuck key never binds from stale state", !t.step());
+    }
+    {   // [3] Escape during capture = unbind (result 0 => cfg gets NONE)
+        Sim s; s.start();
+        s.step();                                   // idle seed poll
+        chk("[3] Esc unbinds", s.press(0x1B) && s.result == 0);
+    }
+    {   // [4] a key already held when the capture opens cannot bind itself
+        Sim s; s.start();
+        s.down[0x41] = true;
+        chk("[4] held-at-start does not bind", !s.step() && !s.step());
+        s.release(0x41);
+        chk("[4] repressing it binds", s.press(0x41) && s.result == 0x41);
+    }
+    {   // [5] nothing pressed -> capture stays open (no timeout, no auto-bind)
+        Sim s; s.start();
+        s.step();                                   // idle seed poll
+        bool ever = false;
+        for (int i = 0; i < 200; ++i) ever = s.step() || ever;
+        chk("[5] idle capture stays open", !ever && !s.done);
+    }
+    {   // [6] one capture at a time; stop always clears the slot
+        Sim s; s.start("a.key");
+        int other = 0;
+        keyBindStart(&other, "b.key");
+        chk("[6] start replaces the slot", g_capVk == &other);
+        keyBindStop();
+        chk("[6] stop clears the slot", g_capVk == nullptr && g_capCfg == nullptr);
+        chk("[6] poll on an idle capture is a no-op", !s.step());
+    }
+    printf("=== %s (%d checks, %d fails) ===\n", fails ? "FAIL" : "PASS",
+           checks, fails);
+    return fails ? 1 : 0;
 }
 
 // A scrolling child must own its pixels: without this the wheel slides off an

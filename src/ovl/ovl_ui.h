@@ -11,8 +11,16 @@ extern DWORD g_toastTick;
 extern int* g_capVk;
 extern const char* g_capCfg;
 extern DWORD g_capT0;
-extern bool g_capDrained;
-extern bool g_capPollReady;
+extern bool g_capSeeded;
+
+// Keybind capture (defined in ovl_ui.cpp, polled by the main loop because the
+// panel never takes keyboard focus). keyBindStart opens a capture, keyBindStop
+// closes it, and keyBindPoll is one step of the edge detector: 1 = a bind
+// finished (*outVk = vk, 0 = Escape/unbind), 0 = still waiting.
+void keyBindStart(int* vk, const char* cfgKey);
+void keyBindStop();
+int  keyBindPoll(const bool* down, DWORD nowMs, int* outVk);
+int  runBindSelfTest(); // -bindtest: capture state machine, no game needed
 
 void hitMark();
 void markChildArea();

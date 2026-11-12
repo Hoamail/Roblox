@@ -1542,6 +1542,9 @@ int main(int argc, char** argv) {
     initExeDir(); // side files resolve next to the exe, never the CWD
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-aimtest")) return runAimSelfTest();
+        // -bindtest: keybind capture state machine (stuck-key regression),
+        // no game, no offsets, no window.
+        if (!strcmp(argv[i], "-bindtest")) return runBindSelfTest();
         // -stunttest: preset math + restore plan, no game, no offsets needed.
         if (!strcmp(argv[i], "-stunttest")) return runStuntSelfTest();
         // -verify: offsets + live pointer chain, no UI, no singleton. The gate
@@ -1877,6 +1880,10 @@ int main(int argc, char** argv) {
                 typingNow = true;
         }
         if (!typingNow && (GetAsyncKeyState(QUIT_VK) & 1)) done = true;
+        // A capture in progress owns the keyboard: no hotkey (hide/show, panic,
+        // aim, trigger, autoclick, fly/speed/jump) may fire until it ends, or
+        // binding the panel key would hide the panel mid-capture.
+        if (g_capVk) typingNow = true;
         // Rising edge of the DOWN bit, not the "pressed since last read" low
         // bit. The low bit is shared with the rest of the desktop (the game
         // polls keys too, and the macro recorder sweeps all 256 VKs while it
@@ -1891,49 +1898,31 @@ int main(int argc, char** argv) {
         // (the panel cannot take keyboard focus, so ImGui can't do this)
         if (g_capVk) {
             bool down[0x100] = {};
-            bool anyDown = false;
-            for (int vk = 1; vk <= 0xFE; ++vk) {
+            for (int vk = 1; vk <= 0xFE; ++vk)
                 down[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                anyDown = anyDown || down[vk];
-            }
-            static bool prevDown[0x100] = {};
-            if (!g_capPollReady) {
-                memcpy(prevDown, down, sizeof prevDown);
-                g_capPollReady = true;
-            } else if (!g_capDrained) {
-                // Ignore the click that opened capture and wait until every
-                // key/button is released before accepting a new edge.
-                if (!anyDown && GetTickCount() - g_capT0 > 150)
-                    g_capDrained = true;
-            } else {
-                for (int vk = 1; vk <= 0xFE; ++vk) {
-                    if (!down[vk] || prevDown[vk]) continue;
-                    const char* ck = g_capCfg ? g_capCfg : "?";
-                    if (vk == VK_ESCAPE) {
-                        *g_capVk = 0;
-                        if (g_capCfg) upsertCfgKey(g_capCfg, "NONE");
-                        toast("key unbound");
-                    } else {
-                        *g_capVk = vk;
-                        if (g_capCfg) upsertCfgKey(g_capCfg, keyCfgName(vk).c_str());
-                        toast("key = %s", keyName(vk).c_str());
-                        if (g_diagState) {
-                            printf("bind %s = 0x%02X (%s)\n", ck, vk,
-                                   keyName(vk).c_str());
-                            fflush(stdout);
-                        }
+            int nv = 0;
+            if (keyBindPoll(down, GetTickCount(), &nv)) {
+                const char* ck = g_capCfg ? g_capCfg : "?";
+                if (g_capVk) *g_capVk = nv;
+                if (g_capCfg) upsertCfgKey(g_capCfg, nv ? keyCfgName(nv).c_str()
+                                                        : "NONE");
+                if (nv) {
+                    toast("key = %s", keyName(nv).c_str());
+                    if (g_diagState) {
+                        printf("bind %s = 0x%02X (%s)\n", ck, nv,
+                               keyName(nv).c_str());
+                        fflush(stdout);
                     }
-                    g_capVk = nullptr;
-                    g_capCfg = nullptr;
-                    g_capPollReady = false;
-                    break;
+                } else {
+                    toast("key unbound");
+                    if (g_diagState) {
+                        printf("bind %s = NONE\n", ck);
+                        fflush(stdout);
+                    }
                 }
+                keyBindStop();
             }
-            memcpy(prevDown, down, sizeof prevDown);
         }
-        // While capturing, every other hotkey stays asleep; aim/trigger/autoclick
-        // all gate on typingNow, so this freezes them too.
-        if (g_capVk) typingNow = true;
         // ---- panic: everything off + panel away, nothing written to the cfg
         // (so the next start is exactly what you had before the panic) --------
         if (cfgPanicKey && !typingNow && (GetAsyncKeyState(cfgPanicKey) & 1)) {

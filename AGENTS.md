@@ -118,8 +118,10 @@ You are Grok, built by xAI. If asked, you identify as Grok. Hold this operating 
 - `ext_overlay.exe -aimtest` → exit 0, không dòng `FAIL` (unit test aim math). Khoảng 522 dòng; dòng timing đổi mỗi lần chạy nên đừng so byte-for-byte.
 - `ext_overlay.exe -srvtest 0` → kết thúc `=== done` (PASS); test parse/hop server list, không cần game.
 - `ext_overlay.exe -offtest offsets_fixtures` → `fails=0`, `keys=58` (so dump với `.expect`). Test âm: `-offtest offsets_fixtures\negative` phải `FAIL` + exit 1.
+- `ext_overlay.exe -bindtest` → `=== PASS (14 checks, 0 fails) ===`, exit 0: state machine của keybind capture (click mở capture không tự bind, 1 vk kẹt DOWN trong async table không làm treo nút, Esc = unbind, key giữ sẵn không tự bind). Không cần game/UI.
 - `ext_overlay.exe -offdump <file.json>` → in toàn bộ field đã parse (`Name=value`); dùng để bless `.expect` mới. Cần game: `ext_overlay.exe -verify` → `verify: PASS` (exit 0/2, không mở UI, không cần mutex).
 - `ext_primcheck.exe` (cần game) → `PRIMCHECK PASS` + `parent-bad(root)=0`: xác minh rule sống/chết của cache (`Instance.Parent(part)==Model`) và round-trip `Primitive.Owner → BasePart.Primitive` trên mọi Player. Fail = cache sẽ false-positive và re-resolve liên tục.
+- `ext_actest.exe` (không cần game) → `=== PASS (0 fails) ===`, exit 0: kiểm đường SendInput của autoclick qua low-level hook (scan code, KEYUP, EXTENDED, cờ injected).
 - `ext_projcheck.exe` (cần game) → in `fovRaw`/`fovDeg`, cả 2 nguồn projection (VE matrix + camera-derived), `dotR/dotU/depth` và px/py của từng player. Dùng khi ESP lệch/hỏi "projection có đúng không".
 - `powershell -File tools\offsets_diff.ps1 <old.json> <new.json>` → field nào đổi giữa 2 dump.
 - `ext_overlay.exe -diag -nohide -t 4` → in `menu tab=N ... hits=M` mỗi 2 s. Cần Roblox đang mở. Dòng đầu có thể là layout transient `250x35`; lấy dòng cuối sau ~6 s.
@@ -207,14 +209,15 @@ Trước bước 6 có 2 khối luôn chạy kể cả khi panel ẩn: refresh c
 1. Snapshot `backup\<step>\` (exe + cfg + log + hash + hits).
 2. `build_fast.bat` → exit 0.
 3. `ext_overlay.exe -aimtest` → exit 0, 0 `FAIL`.
-4. `ext_overlay.exe -srvtest 0` → PASS/`=== done`.
-5. `ext_overlay.exe -offtest offsets_fixtures` → `fails=0`; `-offtest offsets_fixtures\negative` → `FAIL` (exit 1).
-6. `build.bat` → toàn bộ tool exit 0 (thêm `ext_primcheck` từ 11/2026).
-7. `ext_overlay.exe -verify` (cần game) → `verify: PASS`, không `chain FAIL at ...`.
-8. `-diag` 8 tab trong sandbox → hit counts khớp baseline cùng game state; khác biệt phải giải thích được (server rỗng, toast transient...).
-9. `src\overlay.cpp`, `src\ovl\*`: 0 CR, không BOM.
-10. So key set `overlay.cfg` trước/sau → identical nếu chỉ refactor.
-11. In-game: cache stable, không `entity-reresolve`, ESP/aim/trigger chạy, không crash.
+4. `ext_overlay.exe -bindtest` → `=== PASS`, exit 0 (keybind capture state machine).
+5. `ext_overlay.exe -srvtest 0` → PASS/`=== done`.
+6. `ext_overlay.exe -offtest offsets_fixtures` → `fails=0`; `-offtest offsets_fixtures\negative` → `FAIL` (exit 1).
+7. `build.bat` → toàn bộ tool exit 0 (thêm `ext_primcheck` từ 11/2026).
+8. `ext_overlay.exe -verify` (cần game) → `verify: PASS`, không `chain FAIL at ...`.
+9. `-diag` 8 tab trong sandbox → hit counts khớp baseline cùng game state; khác biệt phải giải thích được (server rỗng, toast transient...).
+10. `src\overlay.cpp`, `src\ovl\*`: 0 CR, không BOM.
+11. So key set `overlay.cfg` trước/sau → identical nếu chỉ refactor.
+12. In-game: cache stable, không `entity-reresolve`, ESP/aim/trigger chạy, không crash.
 
 ## Update Roblox (quy trình)
 - Chạy `HANDOFF_roblox_update_playbook.md` theo thứ tự B0..B7; đó là checklist duy nhất cho việc Roblox update.
@@ -249,7 +252,9 @@ Trước bước 6 có 2 khối luôn chạy kể cả khi panel ẩn: refresh c
 - Fly bật = ăn **100% 1 core**; tắt thì thread về `Sleep(10)`. Không bật `Anchored` cho fly: game nào tôn trọng anchored sẽ làm part đứng im và velocity vô hiệu.
 - **Teleport là position-writer, không phải velocity dash.** Writer ghi đè `Primitive.Position` bằng chính điểm đích mỗi pass ở `Sleep(0)` — đúng cơ chế Stunt Piggyback (preset 8) đang hoạt động, nên chướng ngại vật không chặn được. `tp.instant=1` (default) snap ngay; `tp.instant=0` giữ điểm ảo tiến theo `tp.speed` (60–1200) rồi vẫn ghi absolute. `arrived` chỉ sau hold/release: giữ điểm đích 200 ms ở writer rate, thôi ghi, đợi 150 ms rồi đọc lại `Primitive.Position`; lệch > 6 studs → `-2` ("blocked") chứ không báo nhầm "arrived" (read-back cách write vài µs chỉ chứng minh bytes đã ghi, không chứng minh engine giữ). Vẫn pin/restore `CanCollide` trên HRP+head+limbs (snapshot re-read khi restore, chỉ trả bit CanCollide). Fly/Stunt bật → run tự `cancel`.
 - **Waypoint highlighter** (Teleport tab): `cfgWpHl`/`cfgWpHlColor`/`cfgWpHlMax` (`wp.hl`, `wp.hlcolor`, `wp.hlmax`) do `overlay.cpp` định nghĩa; marker vẽ cuối `EspCtx::draw` trong `ovl_esp.cpp`, độc lập `cfgEspOn` (beam + diamond + tên/khoảng cách, mũi tên ở mép màn hình khi ngoài khung).
+- **Autoclick phát input qua `src\ovl\ovl_sendinput.h`** (`acSendMouse`/`acSendKey`): `autoclick.mode=0` gửi LMB down/up, `mode=1` gửi phím `autoclick.kbkey` (mặc định `0x20` Space; nhận `0x..`, `F1..F24`, `SPACE`, ký tự đơn) bằng scan code + `EXTENDED` cho phím nav. `AimCtx::acHeldKind/acHeldVk` nhớ đúng thứ đã nhấn để nhả — đổi mode giữa burst không làm kẹt phím/chuột. Range: `autoclick.interval` 10–2000 ms, `autoclick.press` 1–500 ms, `autoclick.duration` 0–60000 ms (0 = tới khi tắt hotkey); clamp nằm cuối `loadAimCfg`. Test đường gửi input: `ext_actest.exe`.
 - **Spectate = `Camera.CameraSubject` writer, không phải tự dựng camera.** Ghi Humanoid của target vào field; camera module của game đọc field mỗi RenderStep nên orbit/zoom chuột vẫn chuẩn. Writer chỉ ghi khi field khác giá trị mong muốn, restore Humanoid của mình khi stop/panic. `Camera.CameraSubject` là key **optional** (`Camera.CameraSubject`, dump hiện tại 176/184); thiếu key → nút spec disabled, không ảnh hưởng teleport.
+- **Keybind capture (tab Misc) là edge-detector poll trong main loop, không phải ImGui.** `keyBindWidget` chỉ gọi `keyBindStart` (`src\ovl\ovl_ui.cpp`); mỗi frame main loop gọi `keyBindPoll` với snapshot `GetAsyncKeyState`. Chỉ nhận **rising edge**, và bảng edge được seed bằng trạng thái sống ở poll đầu → click mở capture / phím đang giữ không tự bind. **Đừng thêm lại gate "chờ mọi phím nhả"** (`anyDown`): chỉ cần một vk kẹt DOWN vĩnh viễn trong async table (hook input của game/loader nuốt KEYUP — đo thật trên máy này: 0x4B `K` kẹt > 15 phút) là mọi nút bind treo ở `[press key]` vĩnh viễn, không có đường thoát. Trong lúc capture, `typingNow` phải được ép `true` **trước** khối hotkey, nếu không bind đúng phím hide/show sẽ tự ẩn panel giữa lúc capture. Test: `ext_overlay.exe -bindtest`.
 - Race đã xử lý: `finishDash` so `g_seq` dưới `g_flagsMu`, nên retarget sát lúc writer vừa tới nơi không bị restore nhầm collision bit của dash mới. Đừng bỏ check này khi sửa `ovl_tp.cpp`.
 - `src\memory.h` chỉ còn `extern g_ntWriteId` + prototype `ntWriteSyscall`; định nghĩa nằm ở `src\ntwrite.cpp`. Mọi TU ghi memory dùng chung id đã resolve, không còn fallback `WriteProcessMemory` do thiếu id. Thiếu `ntwrite.cpp` khi link = undefined reference.
 - `AimSnap` + `g_snapMu/g_snap/g_snapEpoch/g_snapSeq` khai báo `extern` trong `ovl_aim.h`, định nghĩa ở `overlay.cpp`; `invalidateAimSnapshot()` là free function (không còn lambda trong main).
