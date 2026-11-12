@@ -73,6 +73,8 @@ int loadToggleKey() {
                   "autoclick.interval=100\n"
                   "autoclick.duration=2000\n"
                   "autoclick.press=35\n"
+                  "autoclick.mode=0\n"
+                  "autoclick.kbkey=0x20\n"
                   "input.chatguard=1\n"
                   "ply.mode=1\n"
                   "ply.speed=0\n"
@@ -277,6 +279,11 @@ void loadAimCfg() {
         cfgACInterval = cfgInt(line, "autoclick.interval", cfgACInterval);
         cfgACDuration = cfgInt(line, "autoclick.duration", cfgACDuration);
         cfgACPress = cfgInt(line, "autoclick.press", cfgACPress);
+        cfgACMode = cfgInt(line, "autoclick.mode", cfgACMode);
+        if (strncmp(line, "autoclick.kbkey=", 16) == 0) {
+            int v = parseKey(line + 16);
+            if (v || isNoneKey(line + 16)) cfgACKbKey = v;
+        }
         if (strncmp(line, "input.chatguard=", 16) == 0)
             cfgChatGuard = atoi(line + 16) ? 1 : 0;
         if (strncmp(line, "ply.speed=", 10) == 0)
@@ -539,6 +546,16 @@ void loadAimCfg() {
     if (cfgAimMemSmooth > 0.99f) cfgAimMemSmooth = 0.99f;
     if (cfgAimRate < 30) cfgAimRate = 30;
     if (cfgAimRate > 1000) cfgAimRate = 1000;
+    // Autoclick: interval/press/duration must stay inside the slider ranges,
+    // otherwise a hand-edited cfg can spin the tick or hold the button forever.
+    if (cfgACInterval < 10) cfgACInterval = 10;
+    if (cfgACInterval > 2000) cfgACInterval = 2000;
+    if (cfgACPress < 1) cfgACPress = 1;
+    if (cfgACPress > 500) cfgACPress = 500;
+    if (cfgACDuration < 0) cfgACDuration = 0;
+    if (cfgACDuration > 60000) cfgACDuration = 60000;
+    if (cfgACKeyMode != 0) cfgACKeyMode = 1;
+    if (cfgACMode != 0) cfgACMode = 1;
     // World tab: keep every persisted value inside its slider range.
     if (cfgWorldBright < 1.0f) cfgWorldBright = 1.0f;
     if (cfgWorldBright > 3.0f) cfgWorldBright = 3.0f;

@@ -120,6 +120,8 @@ struct AimCtx {
     DWORD trigT0 = 0, lastFireTick = 0;
     int acPhase = 0;
     DWORD acT0 = 0, acNext = 0, acPressT0 = 0;
+    int acHeldKind = -1;   // -1 = nothing held, 0 = mouse LMB, 1 = keyboard vk
+    int acHeldVk = 0;      // vk held down when acHeldKind == 1
     float accX = 0, accY = 0;
     float emaTargetX = 0, emaTargetY = 0;
     uint64_t emaPrim = 0;
@@ -140,6 +142,8 @@ struct AimCtx {
     void tick(ImDrawList* dl, const float* vm, bool haveVm,
               DWORD fgPid, bool typingNow);
     void autoclickTick(DWORD fgPid, bool typingNow);
+    void acPress();    // send one DOWN for the configured mode
+    void acRelease();  // send UP for whatever acPress actually held
     void releaseTriggerIfDown();
     void restoreViewportIfNeeded(bool force);
     void onAimDisabled();

@@ -4,6 +4,7 @@
 #include "ovl_core.h"  // qpcSeconds / qpcNs
 #include "ovl_cfg.h"   // cfgAim* / cfgTrig* / cfgAC*
 #include "ovl_state.h" // cfg* tab state
+#include "ovl_sendinput.h" // acSendMouse / acSendKey
 #include "imgui.h"
 #include <cmath>
 #include <cstdio>
@@ -766,47 +767,64 @@ void AimCtx::tick(ImDrawList* dl, const float* vm, bool haveVm,
     }
 }
 
+void AimCtx::acPress() {
+    if (cfgACMode == 1) {
+        if (!cfgACKbKey) return; // keyboard mode without a bound key = no-op
+        acSendKey(cfgACKbKey, true);
+        acHeldKind = 1;
+        acHeldVk = cfgACKbKey;
+    } else {
+        acSendMouse(true);
+        acHeldKind = 0;
+        acHeldVk = 0;
+    }
+}
+
+void AimCtx::acRelease() {
+    if (acHeldKind == 0)
+        acSendMouse(false);
+    else if (acHeldKind == 1)
+        acSendKey(acHeldVk, false);
+    acHeldKind = -1;
+    acHeldVk = 0;
+}
+
 void AimCtx::autoclickTick(DWORD fgPid, bool typingNow) {
     bool wantAC = acOn && cfgACEnabled && fgPid == m.pid && !typingNow;
     DWORD nowAC = GetTickCount();
-    if (!wantAC && acPhase) {
-        if (acPhase == 2) {
-            INPUT up{};
-            up.type = INPUT_MOUSE;
-            up.mi.dwFlags = MOUSEEVENTF_LEFTUP;
-            SendInput(1, &up, sizeof(up));
-        }
-        acPhase = 0;
-    }
-    if (wantAC) {
-        if (cfgACDuration > 0 && nowAC - acT0 >= (DWORD)cfgACDuration) {
-            acOn = false; // burst done (also ends toggle)
-            if (acPhase == 2) {
-                INPUT up{};
-                up.type = INPUT_MOUSE;
-                up.mi.dwFlags = MOUSEEVENTF_LEFTUP;
-                SendInput(1, &up, sizeof(up));
-            }
+    if (!wantAC) {
+        if (acPhase) {
+            acRelease();
             acPhase = 0;
-        } else if (acPhase == 2) {
-            if (nowAC - acPressT0 >= (DWORD)cfgACPress) {
-                INPUT up{};
-                up.type = INPUT_MOUSE;
-                up.mi.dwFlags = MOUSEEVENTF_LEFTUP;
-                SendInput(1, &up, sizeof(up));
-                acPhase = 1;
-            }
-        } else if (nowAC >= acNext) {
-            INPUT dn{};
-            dn.type = INPUT_MOUSE;
-            dn.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-            SendInput(1, &dn, sizeof(dn));
-            acPhase = 2;
-            acPressT0 = nowAC;
-            acNext = nowAC + (DWORD)cfgACInterval;
-        } else {
+        }
+        return;
+    }
+    if (cfgACDuration > 0 && nowAC - acT0 >= (DWORD)cfgACDuration) {
+        acOn = false; // burst done (also ends toggle)
+        if (acPhase) {
+            acRelease();
+            acPhase = 0;
+        }
+        return;
+    }
+    if (acPhase == 2) {
+        if (nowAC - acPressT0 >= (DWORD)cfgACPress) {
+            acRelease();
             acPhase = 1;
         }
+        return;
+    }
+    if (nowAC >= acNext) {
+        acPress();
+        if (acHeldKind < 0) { // nothing was sent: keep the cadence, no stuck phase
+            acNext = nowAC + (DWORD)cfgACInterval;
+            return;
+        }
+        acPhase = 2;
+        acPressT0 = nowAC;
+        acNext = nowAC + (DWORD)cfgACInterval;
+    } else {
+        acPhase = 1;
     }
 }
 

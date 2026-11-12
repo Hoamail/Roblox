@@ -411,6 +411,8 @@ int cfgACKey = 'V';
  int cfgACInterval = 100; // ms between click starts
  int cfgACDuration = 2000; // ms per activation, 0 = until key off
  int cfgACPress = 35;     // ms: DOWN-hold duration          // px: fire when target within this
+ int cfgACMode = 0;       // 0 = mouse LEFT click, 1 = keyboard key
+ int cfgACKbKey = 0x20;   // vk sent in keyboard mode (default Space)
  int cfgChatGuard = 1;      // Exunys typing check: no keys/aim in chat
 // ---- player mods (memory writes, WPM proven) ----
 int cfgPlyMode = 1;         // 0 = Humanoid property, 1 = velocity (keeps WalkSpeed legit)

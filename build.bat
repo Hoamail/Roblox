@@ -76,6 +76,8 @@ echo build scanfields exit: %ERRORLEVEL%
 echo build jumpchk exit: %ERRORLEVEL%
 "%GCC%" -std=c++17 -O2 -static -o ext_scan.exe src\scan.cpp -lpsapi
 echo build scan exit: %ERRORLEVEL%
+"%GCC%" -std=c++17 -O2 -static -o ext_actest.exe src\actest.cpp -Isrc -luser32
+echo build actest exit: %ERRORLEVEL%
 if exist ext_overlay.exe (
   for /f "delims=" %%H in ('powershell -NoProfile -Command "(Get-FileHash ext_overlay.exe -Algorithm SHA256).Hash.Substring(0,12)"') do (
     for %%F in (ext_overlay.exe) do echo [build] ext_overlay.exe %%~tF sha256=%%H

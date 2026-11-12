@@ -13,6 +13,8 @@ extern SrvState srv;
 // ---- cfg + runtime state (85 biến) ----
 extern int cfgACEnabled;
 extern int cfgACKey;
+extern int cfgACMode;    // 0 = mouse click, 1 = keyboard key
+extern int cfgACKbKey;   // vk pressed in keyboard mode
 extern bool cfgAimEnabled;
 extern int cfgAimFov;
 extern int cfgAimKey;

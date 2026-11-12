@@ -58,6 +58,33 @@ void drawTabCombat(MenuCtx& c) {
                 hitMark();
                 ImGui::SameLine();
                 keyStateLabel(cfgACKey, acOn && cfgACEnabled);
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", cfgACKeyMode ? "toggle" : "hold");
+
+                ImGui::TextUnformatted("  interval");
+                ImGui::SameLine();
+                sliderIntCfg("##acint", &cfgACInterval, 10, 2000, "%d ms",
+                             "autoclick.interval");
+                hitMark();
+                ImGui::SameLine();
+                sliderIntCfg("##acpress", &cfgACPress, 1, 500, "press %d ms",
+                             "autoclick.press");
+
+                ImGui::TextUnformatted("  duration");
+                ImGui::SameLine();
+                sliderIntCfg("##acdur", &cfgACDuration, 0, 60000, "%d ms",
+                             "autoclick.duration");
+                ImGui::SameLine();
+                ImGui::TextDisabled("0 = until key off");
+
+                if (chkInt("kb mode", &cfgACMode))
+                    upsertCfgKey("autoclick.mode", cfgACMode ? "1" : "0");
+                hitMark();
+                ImGui::SameLine();
+                keyBindWidget("autoclick kb", &cfgACKbKey, "autoclick.kbkey", 110.0f);
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s",
+                                    cfgACMode ? "presses that key" : "mouse LMB");
 
                 if (chkInt("Hitbox", &cfgHitboxEnabled))
                     upsertCfgKey("hitbox.enabled", cfgHitboxEnabled ? "1" : "0");
